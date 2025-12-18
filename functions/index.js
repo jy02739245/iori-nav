@@ -529,6 +529,19 @@ export async function onRequest(context) {
       html = html.replace('</head>', `${cssVarInjection}</head>`);
   }
 
+  // Inject Layout Config for Client-side JS
+  const layoutConfigScript = `
+    <script>
+      window.IORI_LAYOUT_CONFIG = {
+        hideDesc: ${layoutHideDesc},
+        hideLinks: ${layoutHideLinks},
+        hideCategory: ${layoutHideCategory},
+        gridCols: "${layoutGridCols}"
+      };
+    </script>
+  `;
+  html = html.replace('</head>', `${layoutConfigScript}</head>`);
+
   html = html
     .replace('{{HEADER_CONTENT}}', headerContent)
     .replace('{{HEADER_CLASS}}', headerClass)

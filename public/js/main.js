@@ -425,17 +425,16 @@ document.addEventListener('DOMContentLoaded', function() {
       if (!sitesGrid) return;
       
       // 改用 CSS 变量检测毛玻璃效果是否开启
-      // 因为后端只在 layoutEnableFrostedGlass 为 true 时注入 --frosted-glass-blur 变量
       const computedStyle = getComputedStyle(document.documentElement);
       const frostedBlurVal = computedStyle.getPropertyValue('--frosted-glass-blur').trim();
       const isFrostedEnabled = frostedBlurVal !== '';
       
-      const isFiveCols = sitesGrid.className.includes('xl:grid-cols-5');
-      
-      const firstCard = sitesGrid.querySelector('.site-card');
-      const hideDesc = firstCard && !firstCard.querySelector('p.line-clamp-2');
-      const hideLinks = firstCard && !firstCard.querySelector('.copy-btn');
-      const hideCategory = firstCard && !firstCard.querySelector('.bg-secondary-100');
+      // 使用全局配置获取布局设置，避免依赖 DOM 推断
+      const config = window.IORI_LAYOUT_CONFIG || {};
+      const isFiveCols = config.gridCols === '5';
+      const hideDesc = config.hideDesc === true;
+      const hideLinks = config.hideLinks === true;
+      const hideCategory = config.hideCategory === true;
       
       sitesGrid.innerHTML = '';
       
