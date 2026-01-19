@@ -1,28 +1,6 @@
 // functions/index.js
 import { isAdminAuthenticated } from './_middleware';
-
-// 字体映射表 (System Fonts + Google Fonts Mirror)
-const FONT_MAP = {
-  // System Fonts (无需引入)
-  'sans-serif': null,
-  'serif': null,
-  'monospace': null,
-  "'Microsoft YaHei', sans-serif": null,
-  "'SimSun', serif": null,
-  "'PingFang SC', sans-serif": null,
-  "'Segoe UI', sans-serif": null,
-  
-  // Web Fonts (fonts.loli.net)
-  "'Noto Sans SC', sans-serif": "https://fonts.loli.net/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap",
-  "'Noto Serif SC', serif": "https://fonts.loli.net/css2?family=Noto+Serif+SC:wght@400;700&display=swap",
-  "'Ma Shan Zheng', cursive": "https://fonts.loli.net/css2?family=Ma+Shan+Zheng&display=swap", // 书法
-  "'ZCOOL KuaiLe', cursive": "https://fonts.loli.net/css2?family=ZCOOL+KuaiLe&display=swap", // 快乐体
-  "'Long Cang', cursive": "https://fonts.loli.net/css2?family=Long+Cang&display=swap", // 草书
-  "'Roboto', sans-serif": "https://fonts.loli.net/css2?family=Roboto:wght@300;400;500;700&display=swap",
-  "'Open Sans', sans-serif": "https://fonts.loli.net/css2?family=Open+Sans:wght@400;600;700&display=swap",
-  "'Lato', sans-serif": "https://fonts.loli.net/css2?family=Lato:wght@400;700&display=swap",
-  "'Montserrat', sans-serif": "https://fonts.loli.net/css2?family=Montserrat:wght@400;700&display=swap"
-};
+import { FONT_MAP, SCHEMA_VERSION } from './constants';
 
 // 辅助函数
 function escapeHTML(str) {
@@ -57,9 +35,6 @@ function normalizeSortOrder(val) {
   const num = Number(val);
   return Number.isFinite(num) ? num : 9999;
 }
-
-// Schema 迁移版本号 - 修改此值会触发重新迁移
-const SCHEMA_VERSION = 'v2';
 
 // 内存缓存：热状态下跳过 KV 读取，只有冷启动时才查 KV
 let schemaMigrated = false;
@@ -126,8 +101,8 @@ async function ensureSchema(env) {
       }
     }
 
-    // 标记迁移完成（缓存 30 天）
-    await env.NAV_AUTH.put(`schema_migrated_${SCHEMA_VERSION}`, 'true', { expirationTtl: 2592000 });
+    // 标记迁移完成（永久缓存，直到 SCHEMA_VERSION 变更）
+    await env.NAV_AUTH.put(`schema_migrated_${SCHEMA_VERSION}`, 'true');
     schemaMigrated = true;  // 更新内存缓存
     console.log('Schema migration completed');
   } catch (e) {
