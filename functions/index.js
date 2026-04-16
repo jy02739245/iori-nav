@@ -6,6 +6,15 @@ import { getSettingsKeys, parseSettings } from './lib/settings-parser';
 import { renderHorizontalMenu, renderVerticalMenu } from './lib/menu-renderer';
 import { renderSiteCards, renderEmptyState } from './lib/card-renderer';
 
+// 模板内容在 isolate 生命周期内不变（部署会替换 isolate），缓存避免每次 MISS 重复 ASSETS.fetch
+let cachedTemplateHtml = null;
+async function getTemplateHtml(env, requestUrl) {
+  if (cachedTemplateHtml !== null) return cachedTemplateHtml;
+  const res = await env.ASSETS.fetch(new URL('/index.html', requestUrl));
+  cachedTemplateHtml = await res.text();
+  return cachedTemplateHtml;
+}
+
 function getThemeClasses(isCustomWallpaper) {
   return isCustomWallpaper ? {
     headerClass: 'bg-transparent border-none shadow-none transition-colors duration-300',
@@ -55,28 +64,31 @@ export async function onRequest(context) {
       shouldClearCookie = true;
     }
 
-    cacheDirtyValue = await getHomeCacheDirtyValue(env, cacheScope);
+    // 并行读取 dirty 标记与缓存 HTML。dirty=true 是低频场景（后台刚保存），
+    // 多读一次 HTML 可接受，换取 99%+ 请求上少一次 KV 串行往返
+    let cachedHtml = null;
+    try {
+      [cacheDirtyValue, cachedHtml] = await Promise.all([
+        getHomeCacheDirtyValue(env, cacheScope),
+        env.NAV_AUTH.get(homeCacheKey),
+      ]);
+    } catch (e) {
+      console.warn('Failed to read home cache:', e);
+    }
     cacheDirty = !!cacheDirtyValue;
 
-    if (!cacheDirty) {
-      try {
-        const cachedHtml = await env.NAV_AUTH.get(homeCacheKey);
-        if (cachedHtml) {
-          const response = new Response(cachedHtml, {
-            headers: { 'Content-Type': 'text/html; charset=utf-8', 'X-Cache': 'HIT' }
-          });
+    if (!cacheDirty && cachedHtml) {
+      const response = new Response(cachedHtml, {
+        headers: { 'Content-Type': 'text/html; charset=utf-8', 'X-Cache': 'HIT' }
+      });
 
-          if (shouldClearCookie) {
-            response.headers.append('Set-Cookie', 'iori_cache_stale=; Path=/; Max-Age=0; SameSite=Lax');
-            response.headers.append('Set-Cookie', 'iori_cache_public_stale=; Path=/; Max-Age=0; SameSite=Lax');
-            response.headers.append('Set-Cookie', 'iori_cache_private_stale=; Path=/; Max-Age=0; SameSite=Lax');
-          }
-
-          return response;
-        }
-      } catch (e) {
-        console.warn('Failed to read home cache:', e);
+      if (shouldClearCookie) {
+        response.headers.append('Set-Cookie', 'iori_cache_stale=; Path=/; Max-Age=0; SameSite=Lax');
+        response.headers.append('Set-Cookie', 'iori_cache_public_stale=; Path=/; Max-Age=0; SameSite=Lax');
+        response.headers.append('Set-Cookie', 'iori_cache_private_stale=; Path=/; Max-Age=0; SameSite=Lax');
       }
+
+      return response;
     }
   }
 
@@ -109,11 +121,11 @@ export async function onRequest(context) {
     return result;
   };
 
-  const [categoriesResult, settingsResult, sitesResult, templateResponse] = await Promise.all([
+  const [categoriesResult, settingsResult, sitesResult, templateHtml] = await Promise.all([
     env.NAV_DB.prepare(categoryQuery).all().catch(e => ({ results: [], error: e })),
     fetchSettings().catch(e => ({ results: [], error: e })),
     env.NAV_DB.prepare(sitesQuery).bind(includePrivate).all().catch(e => ({ results: [], error: e })),
-    env.ASSETS.fetch(new URL('/index.html', request.url))
+    getTemplateHtml(env, request.url)
   ]);
 
   // === 3. 处理分类结果 — 构建分类树 ===
@@ -335,7 +347,7 @@ export async function onRequest(context) {
   const hitokotoClass = (isCustomWallpaper ? 'text-black dark:text-gray-200' : 'text-gray-500 dark:text-gray-400') + ' ml-auto';
 
   // === 16. 模板注入 ===
-  let html = await templateResponse.text();
+  let html = templateHtml;
 
   // --- 收集所有 </head> 注入内容（合并为一次替换） ---
   let headInjections = '';
